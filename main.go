@@ -66,6 +66,8 @@ func main() {
 	s.Start(ctx)
 
 	slog.Info("shutting down http server")
-	httpServer.Shutdown(context.Background())
+	if err := httpServer.Shutdown(context.Background()); err != nil {
+		slog.Error("http server shutdown error", "error", err)
+	}
 	slog.Info("ebay-watcher stopped")
 }
