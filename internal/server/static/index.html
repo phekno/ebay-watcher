@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ebay-watcher</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --surf2:   #22263a;
+      --border:  #2e3250;
+      --accent:  #4f6ef7;
+      --accent2: #7c3aed;
+      --green:   #22c55e;
+      --yellow:  #f59e0b;
+      --red:     #ef4444;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 24px; background: var(--surface);
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; }
+    .logo-icon {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .header-right { display: flex; align-items: center; gap: 14px; }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.4); animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0%  { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+      70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+      100%{ box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+    .updated { color: var(--muted); font-size: 12px; }
+
+    main { max-width: 1380px; margin: 0 auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* stat cards */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 18px; display: flex; flex-direction: column; gap: 5px;
+      transition: border-color .2s;
+    }
+    .stat-card:hover { border-color: var(--accent); }
+    .stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+    .stat-value { font-size: 26px; font-weight: 700; letter-spacing: -.5px; line-height: 1; }
+    .stat-sub { font-size: 11px; color: var(--muted); }
+    .c-green  { color: var(--green); }
+    .c-yellow { color: var(--yellow); }
+    .c-accent { color: var(--accent); }
+
+    /* card container */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .card-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+    }
+    .card-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+    .card-title em { font-style: normal; font-size: 15px; }
+
+    /* tabs */
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tab {
+      padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      border: 1px solid var(--border); background: transparent; color: var(--muted);
+      cursor: pointer; transition: all .15s;
+    }
+    .tab:hover { border-color: var(--accent); color: var(--text); }
+    .tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* chart */
+    .chart-box { padding: 18px; height: 250px; position: relative; }
+    .chart-empty {
+      display: flex; align-items: center; justify-content: center; flex-direction: column;
+      gap: 8px; height: 100%; color: var(--muted); font-size: 13px;
+    }
+    .chart-empty big { font-size: 30px; }
+
+    /* table */
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 9px 14px; text-align: left; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .6px; color: var(--muted);
+      background: var(--surf2); white-space: nowrap;
+    }
+    tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
+    tbody tr:hover { background: var(--surf2); }
+    td { padding: 11px 14px; vertical-align: middle; }
+
+    .t-title { max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .t-title a { color: var(--text); text-decoration: none; font-weight: 500; }
+    .t-title a:hover { color: var(--accent); text-decoration: underline; }
+
+    .chip-price {
+      display: inline-block; padding: 3px 9px; border-radius: 20px;
+      font-weight: 700; font-size: 12px;
+      background: rgba(34,197,94,.12); color: var(--green); white-space: nowrap;
+    }
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+    }
+    .b-new   { background: rgba(79,110,247,.15); color: var(--accent); }
+    .b-used  { background: rgba(100,116,139,.15); color: var(--muted); }
+    .b-refurb{ background: rgba(245,158,11,.15);  color: var(--yellow); }
+
+    .qtag {
+      display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px;
+      background: rgba(79,110,247,.1); color: var(--accent);
+      max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .t-muted { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .ext-link {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 6px;
+      background: rgba(54,101,243,.1); color: #3665f3; text-decoration: none;
+      transition: background .15s;
+    }
+    .ext-link:hover { background: rgba(54,101,243,.25); }
+
+    /* poll bar */
+    .poll-bar {
+      display: flex; align-items: center; gap: 16px; padding: 10px 18px;
+      background: var(--surf2); border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--muted); flex-wrap: wrap;
+    }
+    .poll-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+    /* watched queries */
+    .q-list { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+    .q-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 13px; background: var(--surf2);
+      border-radius: 7px; border: 1px solid var(--border);
+    }
+    .q-name { font-family: monospace; font-size: 13px; }
+    .q-meta { font-size: 11px; color: var(--muted); }
+
+    /* empty */
+    .empty { padding: 50px 20px; text-align: center; color: var(--muted); }
+    .empty big { font-size: 36px; display: block; margin-bottom: 10px; }
+    .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 5px; }
+
+    /* skeleton */
+    .sk { background: linear-gradient(90deg, var(--surf2) 25%, var(--border) 50%, var(--surf2) 75%);
+      background-size: 200% 100%; animation: sh 1.4s infinite; border-radius: 4px; }
+    @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .sk-block { display: block; height: 14px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🔍</div>
+    ebay-watcher
+  </div>
+  <div class="header-right">
+    <div class="pulse" title="Live"></div>
+    <div class="updated" id="updatedAt">Loading…</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats row -->
+  <div class="stats" id="statsRow">
+    <div class="stat-card">
+      <div class="stat-label">Listings Seen</div>
+      <div class="stat-value c-accent sk sk-block" id="sTotal" style="width:60px">&nbsp;</div>
+      <div class="stat-sub" id="sNotifSub">&nbsp;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Notified</div>
+      <div class="stat-value c-green sk sk-block" id="sNotif" style="width:40px">&nbsp;</div>
+      <div class="stat-sub">under threshold</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Lowest Seen</div>
+      <div class="stat-value c-yellow sk sk-block" id="sLow" style="width:80px">&nbsp;</div>
+      <div class="stat-sub" id="sAvg">&nbsp;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Max Price</div>
+      <div class="stat-value sk sk-block" id="sMax" style="width:70px">&nbsp;</div>
+      <div class="stat-sub" id="sInterval">&nbsp;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Next Poll</div>
+      <div class="stat-value sk sk-block" id="sNext" style="width:60px">&nbsp;</div>
+      <div class="stat-sub" id="sNextSub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- Price chart -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><em>📈</em> Price Trend (30 days)</div>
+      <div class="tabs" id="chartTabs"></div>
+    </div>
+    <div class="chart-box">
+      <canvas id="priceChart"></canvas>
+      <div class="chart-empty" id="chartEmpty" style="display:none">
+        <big>📉</big>No price data yet — check back after the first poll
+      </div>
+    </div>
+  </div>
+
+  <!-- Listings table -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><em>🔔</em> Notified Listings</div>
+      <div id="listingCount" style="font-size:12px;color:var(--muted)"></div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Price</th>
+            <th>Condition</th>
+            <th>Seller</th>
+            <th>Query</th>
+            <th>Seen</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="listBody">
+          <tr>
+            <td><div class="sk sk-block" style="width:260px"></div></td>
+            <td><div class="sk sk-block" style="width:55px"></div></td>
+            <td><div class="sk sk-block" style="width:65px"></div></td>
+            <td><div class="sk sk-block" style="width:75px"></div></td>
+            <td><div class="sk sk-block" style="width:110px"></div></td>
+            <td><div class="sk sk-block" style="width:50px"></div></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="poll-bar" id="pollBar" style="display:none">
+      <div class="poll-dot"></div>
+      <span id="pollText"></span>
+    </div>
+  </div>
+
+  <!-- Watched queries -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><em>🎯</em> Watched Queries</div>
+    </div>
+    <div class="q-list" id="qList">
+      <div class="sk sk-block" style="height:38px;border-radius:7px"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ─── Chart ───────────────────────────────────────────────────
+let chart = null;
+function initChart() {
+  chart = new Chart($('priceChart').getContext('2d'), {
+    type: 'scatter',
+    data: { datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: c => `$${c.parsed.y.toFixed(2)}  ·  ${new Date(c.parsed.x).toLocaleDateString()}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'day', displayFormats: { day: 'MMM d' } },
+          grid: { color: 'rgba(46,50,80,.6)' },
+          ticks: { color: '#64748b' }
+        },
+        y: {
+          grid: { color: 'rgba(46,50,80,.6)' },
+          ticks: { color: '#64748b', callback: v => '$' + v.toFixed(0) }
+        }
+      }
+    }
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+const api = async path => { const r = await fetch(path); if (!r.ok) throw Error(r.status); return r.json(); };
+const fp = v => '$' + v.toFixed(2);
+function ago(iso) {
+  if (!iso) return '—';
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60)    return 'just now';
+  if (s < 3600)  return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+function countdown(iso) {
+  if (!iso) return '—';
+  const s = (new Date(iso) - Date.now()) / 1000;
+  if (s <= 0)  return 'soon';
+  if (s < 60)  return Math.floor(s) + 's';
+  if (s < 3600)return Math.floor(s/60) + 'm';
+  return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+}
+function condClass(c) {
+  if (!c) return 'b-used';
+  const l = c.toLowerCase();
+  if (l.includes('new')) return 'b-new';
+  if (l.includes('refurb') || l.includes('renew') || l.includes('excel') || l.includes('very_good')) return 'b-refurb';
+  return 'b-used';
+}
+function condLabel(c) {
+  if (!c) return '—';
+  return c.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase()).replace(/Refurbished/,'Refurb');
+}
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ─── Stats ───────────────────────────────────────────────────
+async function loadStats() {
+  const s = await api('/api/stats');
+  ['sTotal','sNotif','sLow','sMax','sNext'].forEach(id => $(id).classList.remove('sk','sk-block'));
+  $('sTotal').textContent    = s.total_seen.toLocaleString();
+  $('sNotifSub').textContent = `${s.total_notified} notified`;
+  $('sNotif').textContent    = s.total_notified.toLocaleString();
+  $('sLow').textContent      = s.lowest_price > 0 ? fp(s.lowest_price) : '—';
+  $('sAvg').textContent      = s.average_price > 0 ? `avg ${fp(s.average_price)}` : '';
+  $('sMax').textContent      = fp(s.max_price);
+  $('sInterval').textContent = `every ${s.poll_interval}`;
+  $('sNext').textContent     = countdown(s.next_poll_at);
+  $('sNextSub').textContent  = s.last_poll_at ? `last ${ago(s.last_poll_at)}` : 'not yet polled';
+  if (s.last_poll_at) {
+    $('pollBar').style.display = 'flex';
+    $('pollText').textContent  = `Last polled ${ago(s.last_poll_at)} · Next in ${countdown(s.next_poll_at)} · Threshold $${s.max_price.toFixed(0)}`;
+  }
+  return { queries: s.queries || [], nextPollAt: s.next_poll_at };
+}
+
+// ─── Tabs + chart ────────────────────────────────────────────
+let lastQueries = [];
+function buildTabs(queries) {
+  lastQueries = queries;
+  const tabs = $('chartTabs'); tabs.innerHTML = '';
+  const ql = $('qList'); ql.innerHTML = '';
+
+  queries.forEach((q, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === 0 ? ' on' : '');
+    btn.textContent = q.length > 22 ? q.slice(0,20)+'…' : q;
+    btn.title = q;
+    btn.onclick = () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+      btn.classList.add('on');
+      loadChart(q);
+    };
+    tabs.appendChild(btn);
+
+    const row = document.createElement('div');
+    row.className = 'q-row';
+    row.innerHTML = `<div class="q-name">${esc(q)}</div><div class="q-meta">watching</div>`;
+    ql.appendChild(row);
+  });
+
+  if (queries.length > 0) loadChart(queries[0]);
+}
+
+async function loadChart(query) {
+  const data = await api('/api/price-history?query='+encodeURIComponent(query)+'&days=30');
+  const canvas = $('priceChart'), empty = $('chartEmpty');
+  if (!data.points || !data.points.length) {
+    canvas.style.display = 'none'; empty.style.display = 'flex'; return;
+  }
+  canvas.style.display = 'block'; empty.style.display = 'none';
+  chart.data.datasets = [{
+    data: data.points.map(p => ({ x: new Date(p.seen_at).getTime(), y: p.price })),
+    backgroundColor: 'rgba(79,110,247,.75)',
+    pointRadius: 4, pointHoverRadius: 7, showLine: false
+  }];
+  chart.update();
+}
+
+// ─── Listings ────────────────────────────────────────────────
+async function loadListings() {
+  const list = await api('/api/listings?limit=100');
+  const tbody = $('listBody');
+  $('listingCount').textContent = `${list.length} listing${list.length !== 1 ? 's' : ''}`;
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty"><big>🔔</big><strong>No notifications yet</strong>Listings under your max price will appear here after the first poll.</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(l => `
+    <tr>
+      <td class="t-title"><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title)}</a></td>
+      <td><span class="chip-price">${fp(l.price)}</span></td>
+      <td><span class="badge ${condClass(l.condition)}">${condLabel(l.condition)}</span></td>
+      <td class="t-muted">${esc(l.seller||'—')}</td>
+      <td><span class="qtag" title="${esc(l.query)}">${esc(l.query)}</span></td>
+      <td class="t-muted">${ago(l.first_seen)}</td>
+      <td><a class="ext-link" href="${esc(l.url)}" target="_blank" rel="noopener" title="View on eBay">↗</a></td>
+    </tr>`).join('');
+}
+
+// ─── Refresh loop ────────────────────────────────────────────
+let nextPollAt = null;
+
+async function refresh() {
+  try {
+    const [{ queries, nextPollAt: np }] = await Promise.all([loadStats(), loadListings()]);
+    nextPollAt = np;
+    buildTabs(queries);
+    $('updatedAt').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error(e);
+    $('updatedAt').textContent = 'Update failed — retrying…';
+  }
+}
+
+initChart();
+refresh();
+setInterval(refresh, 60_000);
+setInterval(() => {
+  if (nextPollAt) $('sNext').textContent = countdown(nextPollAt);
+}, 10_000);
+</script>
+</body>
+</html>
