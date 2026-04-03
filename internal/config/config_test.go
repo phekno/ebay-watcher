@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 	"time"
 )
@@ -77,7 +76,7 @@ func TestLoad_MissingRequiredEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setEnv(t)
-			os.Unsetenv(tt.unset)
+			t.Setenv(tt.unset, "")
 
 			_, err := Load()
 			if err == nil {
@@ -99,7 +98,7 @@ func TestLoad_EmptyQueries(t *testing.T) {
 
 func TestLoad_MissingMaxPrice(t *testing.T) {
 	setEnv(t)
-	os.Unsetenv("MAX_PRICE")
+	t.Setenv("MAX_PRICE", "")
 
 	_, err := Load()
 	if err == nil {

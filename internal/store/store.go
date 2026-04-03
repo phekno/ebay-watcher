@@ -150,7 +150,7 @@ func (s *Store) GetNotifiedListings(limit int) ([]Listing, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanListings(rows)
 }
 
@@ -165,7 +165,7 @@ func (s *Store) GetPriceHistory(query string, days int) ([]PricePoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var points []PricePoint
 	for rows.Next() {

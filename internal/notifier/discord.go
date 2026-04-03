@@ -79,7 +79,7 @@ func (d *Discord) Notify(ctx context.Context, query string, listing ebay.Listing
 	if err != nil {
 		return fmt.Errorf("discord request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Discord returns 204 No Content on success
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
