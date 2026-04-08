@@ -139,15 +139,55 @@
     }
     .poll-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
 
-    /* watched queries */
-    .q-list { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
-    .q-row {
+    /* watches */
+    .w-list { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+    .w-row {
       display: flex; align-items: center; justify-content: space-between;
       padding: 9px 13px; background: var(--surf2);
-      border-radius: 7px; border: 1px solid var(--border);
+      border-radius: 7px; border: 1px solid var(--border); gap: 12px;
     }
-    .q-name { font-family: monospace; font-size: 13px; }
-    .q-meta { font-size: 11px; color: var(--muted); }
+    .w-row.disabled { opacity: .5; }
+    .w-info { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .w-query { font-family: monospace; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .w-price { font-size: 12px; color: var(--green); font-weight: 600; white-space: nowrap; }
+    .w-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .w-btn {
+      padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600;
+      border: 1px solid var(--border); background: transparent; color: var(--muted);
+      cursor: pointer; transition: all .15s;
+    }
+    .w-btn:hover { border-color: var(--accent); color: var(--text); }
+    .w-btn.danger:hover { border-color: var(--red); color: var(--red); }
+    .w-toggle {
+      width: 36px; height: 20px; border-radius: 10px; border: none;
+      background: var(--border); cursor: pointer; position: relative; transition: background .2s;
+    }
+    .w-toggle.on { background: var(--green); }
+    .w-toggle::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 14px; height: 14px; border-radius: 50%; background: #fff;
+      transition: transform .2s;
+    }
+    .w-toggle.on::after { transform: translateX(16px); }
+    .w-form {
+      display: flex; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--border);
+      align-items: center; flex-wrap: wrap;
+    }
+    .w-input {
+      padding: 7px 11px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--surf2); color: var(--text); font-size: 13px;
+      outline: none; transition: border-color .15s;
+    }
+    .w-input:focus { border-color: var(--accent); }
+    .w-input-query { flex: 1; min-width: 150px; }
+    .w-input-price { width: 100px; }
+    .w-submit {
+      padding: 7px 16px; border-radius: 6px; border: none;
+      background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s;
+    }
+    .w-submit:hover { opacity: .85; }
+    .w-submit:disabled { opacity: .5; cursor: not-allowed; }
 
     /* empty */
     .empty { padding: 50px 20px; text-align: center; color: var(--muted); }
@@ -194,8 +234,8 @@
       <div class="stat-sub" id="sAvg">&nbsp;</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Max Price</div>
-      <div class="stat-value sk sk-block" id="sMax" style="width:70px">&nbsp;</div>
+      <div class="stat-label">Active Watches</div>
+      <div class="stat-value c-accent sk sk-block" id="sWatches" style="width:40px">&nbsp;</div>
       <div class="stat-sub" id="sInterval">&nbsp;</div>
     </div>
     <div class="stat-card">
@@ -257,14 +297,19 @@
     </div>
   </div>
 
-  <!-- Watched queries -->
+  <!-- Watches -->
   <div class="card">
     <div class="card-head">
-      <div class="card-title"><em>🎯</em> Watched Queries</div>
+      <div class="card-title"><em>🎯</em> Watches</div>
     </div>
-    <div class="q-list" id="qList">
+    <div class="w-list" id="wList">
       <div class="sk sk-block" style="height:38px;border-radius:7px"></div>
     </div>
+    <form class="w-form" id="addWatchForm">
+      <input class="w-input w-input-query" id="newQuery" placeholder="Search query…" required />
+      <input class="w-input w-input-price" id="newMaxPrice" type="number" step="0.01" min="0.01" placeholder="Max price" required />
+      <button class="w-submit" type="submit">Add Watch</button>
+    </form>
   </div>
 
 </main>
@@ -340,30 +385,55 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 // ─── Stats ───────────────────────────────────────────────────
 async function loadStats() {
   const s = await api('/api/stats');
-  ['sTotal','sNotif','sLow','sMax','sNext'].forEach(id => $(id).classList.remove('sk','sk-block'));
+  ['sTotal','sNotif','sLow','sWatches','sNext'].forEach(id => $(id).classList.remove('sk','sk-block'));
   $('sTotal').textContent    = s.total_seen.toLocaleString();
   $('sNotifSub').textContent = `${s.total_notified} notified`;
   $('sNotif').textContent    = s.total_notified.toLocaleString();
   $('sLow').textContent      = s.lowest_price > 0 ? fp(s.lowest_price) : '—';
   $('sAvg').textContent      = s.average_price > 0 ? `avg ${fp(s.average_price)}` : '';
-  $('sMax').textContent      = fp(s.max_price);
+  $('sWatches').textContent  = s.watch_count;
   $('sInterval').textContent = `every ${s.poll_interval}`;
   $('sNext').textContent     = countdown(s.next_poll_at);
   $('sNextSub').textContent  = s.last_poll_at ? `last ${ago(s.last_poll_at)}` : 'not yet polled';
   if (s.last_poll_at) {
     $('pollBar').style.display = 'flex';
-    $('pollText').textContent  = `Last polled ${ago(s.last_poll_at)} · Next in ${countdown(s.next_poll_at)} · Threshold $${s.max_price.toFixed(0)}`;
+    $('pollText').textContent  = `Last polled ${ago(s.last_poll_at)} · Next in ${countdown(s.next_poll_at)}`;
   }
-  return { queries: s.queries || [], nextPollAt: s.next_poll_at };
+  return { nextPollAt: s.next_poll_at };
 }
 
-// ─── Tabs + chart ────────────────────────────────────────────
-let lastQueries = [];
-function buildTabs(queries) {
-  lastQueries = queries;
-  const tabs = $('chartTabs'); tabs.innerHTML = '';
-  const ql = $('qList'); ql.innerHTML = '';
+// ─── Watches ─────────────────────────────────────────────────
+let allWatches = [];
 
+async function loadWatches() {
+  allWatches = await api('/api/watches');
+  renderWatches();
+  buildChartTabs();
+}
+
+function renderWatches() {
+  const wl = $('wList');
+  if (!allWatches.length) {
+    wl.innerHTML = '<div style="padding:14px;color:var(--muted);text-align:center;font-size:13px">No watches yet — add one below.</div>';
+    return;
+  }
+  wl.innerHTML = allWatches.map(w => `
+    <div class="w-row${w.enabled ? '' : ' disabled'}" data-id="${w.id}">
+      <div class="w-info">
+        <button class="w-toggle${w.enabled ? ' on' : ''}" onclick="toggleWatch(${w.id}, ${!w.enabled})" title="${w.enabled ? 'Disable' : 'Enable'}"></button>
+        <span class="w-query" title="${esc(w.query)}">${esc(w.query)}</span>
+        <span class="w-price">&le; ${fp(w.max_price)}</span>
+      </div>
+      <div class="w-actions">
+        <button class="w-btn" onclick="editWatch(${w.id})">Edit</button>
+        <button class="w-btn danger" onclick="deleteWatch(${w.id})">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+function buildChartTabs() {
+  const tabs = $('chartTabs'); tabs.innerHTML = '';
+  const queries = allWatches.filter(w => w.enabled).map(w => w.query);
   queries.forEach((q, i) => {
     const btn = document.createElement('button');
     btn.className = 'tab' + (i === 0 ? ' on' : '');
@@ -375,14 +445,40 @@ function buildTabs(queries) {
       loadChart(q);
     };
     tabs.appendChild(btn);
-
-    const row = document.createElement('div');
-    row.className = 'q-row';
-    row.innerHTML = `<div class="q-name">${esc(q)}</div><div class="q-meta">watching</div>`;
-    ql.appendChild(row);
   });
-
   if (queries.length > 0) loadChart(queries[0]);
+}
+
+async function toggleWatch(id, enabled) {
+  await fetch('/api/watches/' + id, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ enabled })
+  });
+  await loadWatches();
+  await loadStats();
+}
+
+async function deleteWatch(id) {
+  if (!confirm('Delete this watch?')) return;
+  await fetch('/api/watches/' + id, { method: 'DELETE' });
+  await loadWatches();
+  await loadStats();
+}
+
+async function editWatch(id) {
+  const w = allWatches.find(w => w.id === id);
+  if (!w) return;
+  const query = prompt('Search query:', w.query);
+  if (query === null) return;
+  const priceStr = prompt('Max price:', w.max_price);
+  if (priceStr === null) return;
+  const max_price = parseFloat(priceStr);
+  if (!query || isNaN(max_price) || max_price <= 0) { alert('Invalid input'); return; }
+  await fetch('/api/watches/' + id, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ query, max_price })
+  });
+  await loadWatches();
 }
 
 async function loadChart(query) {
@@ -421,14 +517,36 @@ async function loadListings() {
     </tr>`).join('');
 }
 
+// ─── Add watch form ─────────────────────────────────────────
+$('addWatchForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const query = $('newQuery').value.trim();
+  const max_price = parseFloat($('newMaxPrice').value);
+  if (!query || isNaN(max_price) || max_price <= 0) return;
+
+  const btn = e.target.querySelector('.w-submit');
+  btn.disabled = true;
+  try {
+    await fetch('/api/watches', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ query, max_price })
+    });
+    $('newQuery').value = '';
+    $('newMaxPrice').value = '';
+    await loadWatches();
+    await loadStats();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ─── Refresh loop ────────────────────────────────────────────
 let nextPollAt = null;
 
 async function refresh() {
   try {
-    const [{ queries, nextPollAt: np }] = await Promise.all([loadStats(), loadListings()]);
+    const [{ nextPollAt: np }] = await Promise.all([loadStats(), loadListings(), loadWatches()]);
     nextPollAt = np;
-    buildTabs(queries);
     $('updatedAt').textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch(e) {
     console.error(e);

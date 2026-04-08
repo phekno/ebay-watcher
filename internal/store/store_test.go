@@ -226,3 +226,124 @@ func TestGetStats_Empty(t *testing.T) {
 		t.Errorf("LastPollAt = %v, want nil", stats.LastPollAt)
 	}
 }
+
+// ── Watch CRUD tests ────────────────────────────────────────
+
+func TestCreateWatch(t *testing.T) {
+	s := newTestStore(t)
+
+	w, err := s.CreateWatch("thinkpad", 500)
+	if err != nil {
+		t.Fatalf("create watch: %v", err)
+	}
+	if w.Query != "thinkpad" {
+		t.Errorf("Query = %q, want thinkpad", w.Query)
+	}
+	if w.MaxPrice != 500 {
+		t.Errorf("MaxPrice = %f, want 500", w.MaxPrice)
+	}
+	if !w.Enabled {
+		t.Error("expected new watch to be enabled")
+	}
+	if w.ID == 0 {
+		t.Error("expected non-zero ID")
+	}
+}
+
+func TestListWatches(t *testing.T) {
+	s := newTestStore(t)
+
+	s.CreateWatch("thinkpad", 500)
+	s.CreateWatch("macbook", 800)
+
+	watches, err := s.ListWatches()
+	if err != nil {
+		t.Fatalf("list watches: %v", err)
+	}
+	if len(watches) != 2 {
+		t.Fatalf("expected 2 watches, got %d", len(watches))
+	}
+	if watches[0].Query != "thinkpad" || watches[1].Query != "macbook" {
+		t.Errorf("watches = %v", watches)
+	}
+}
+
+func TestListEnabledWatches(t *testing.T) {
+	s := newTestStore(t)
+
+	w1, _ := s.CreateWatch("thinkpad", 500)
+	s.CreateWatch("macbook", 800)
+
+	// Disable the first one
+	s.UpdateWatch(w1.ID, w1.Query, w1.MaxPrice, false)
+
+	watches, err := s.ListEnabledWatches()
+	if err != nil {
+		t.Fatalf("list enabled: %v", err)
+	}
+	if len(watches) != 1 {
+		t.Fatalf("expected 1 enabled watch, got %d", len(watches))
+	}
+	if watches[0].Query != "macbook" {
+		t.Errorf("expected macbook, got %q", watches[0].Query)
+	}
+}
+
+func TestUpdateWatch(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.CreateWatch("thinkpad", 500)
+
+	err := s.UpdateWatch(w.ID, "dell xps", 700, false)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	updated, err := s.GetWatch(w.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if updated.Query != "dell xps" {
+		t.Errorf("Query = %q, want dell xps", updated.Query)
+	}
+	if updated.MaxPrice != 700 {
+		t.Errorf("MaxPrice = %f, want 700", updated.MaxPrice)
+	}
+	if updated.Enabled {
+		t.Error("expected disabled")
+	}
+}
+
+func TestUpdateWatch_NotFound(t *testing.T) {
+	s := newTestStore(t)
+
+	err := s.UpdateWatch(999, "q", 100, true)
+	if err == nil {
+		t.Fatal("expected error for missing watch")
+	}
+}
+
+func TestDeleteWatch(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.CreateWatch("thinkpad", 500)
+
+	err := s.DeleteWatch(w.ID)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	watches, _ := s.ListWatches()
+	if len(watches) != 0 {
+		t.Errorf("expected 0 watches after delete, got %d", len(watches))
+	}
+}
+
+func TestDeleteWatch_NotFound(t *testing.T) {
+	s := newTestStore(t)
+
+	err := s.DeleteWatch(999)
+	if err == nil {
+		t.Fatal("expected error for missing watch")
+	}
+}

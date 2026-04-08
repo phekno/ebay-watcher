@@ -5,14 +5,12 @@ import (
 	"time"
 )
 
-// setEnv sets all required env vars to valid defaults and returns a cleanup func.
+// setEnv sets all required env vars to valid defaults.
 func setEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("EBAY_CLIENT_ID", "test-id")
 	t.Setenv("EBAY_CLIENT_SECRET", "test-secret")
 	t.Setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/test")
-	t.Setenv("SEARCH_QUERIES", "thinkpad")
-	t.Setenv("MAX_PRICE", "500")
 }
 
 func TestLoad_Success(t *testing.T) {
@@ -26,12 +24,6 @@ func TestLoad_Success(t *testing.T) {
 	if cfg.EbayClientID != "test-id" {
 		t.Errorf("EbayClientID = %q, want %q", cfg.EbayClientID, "test-id")
 	}
-	if cfg.MaxPrice != 500 {
-		t.Errorf("MaxPrice = %f, want 500", cfg.MaxPrice)
-	}
-	if len(cfg.Queries) != 1 || cfg.Queries[0] != "thinkpad" {
-		t.Errorf("Queries = %v, want [thinkpad]", cfg.Queries)
-	}
 	if cfg.PollInterval != time.Hour {
 		t.Errorf("PollInterval = %v, want 1h", cfg.PollInterval)
 	}
@@ -43,30 +35,10 @@ func TestLoad_Success(t *testing.T) {
 	}
 }
 
-func TestLoad_MultipleQueries(t *testing.T) {
-	setEnv(t)
-	t.Setenv("SEARCH_QUERIES", " thinkpad , macbook pro , dell xps ")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	want := []string{"thinkpad", "macbook pro", "dell xps"}
-	if len(cfg.Queries) != len(want) {
-		t.Fatalf("got %d queries, want %d", len(cfg.Queries), len(want))
-	}
-	for i, q := range want {
-		if cfg.Queries[i] != q {
-			t.Errorf("Queries[%d] = %q, want %q", i, cfg.Queries[i], q)
-		}
-	}
-}
-
 func TestLoad_MissingRequiredEnv(t *testing.T) {
 	tests := []struct {
-		name   string
-		unset  string
+		name  string
+		unset string
 	}{
 		{"missing EBAY_CLIENT_ID", "EBAY_CLIENT_ID"},
 		{"missing EBAY_CLIENT_SECRET", "EBAY_CLIENT_SECRET"},
@@ -83,36 +55,6 @@ func TestLoad_MissingRequiredEnv(t *testing.T) {
 				t.Fatal("expected error, got nil")
 			}
 		})
-	}
-}
-
-func TestLoad_EmptyQueries(t *testing.T) {
-	setEnv(t)
-	t.Setenv("SEARCH_QUERIES", "  ,  ,  ")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for empty queries, got nil")
-	}
-}
-
-func TestLoad_MissingMaxPrice(t *testing.T) {
-	setEnv(t)
-	t.Setenv("MAX_PRICE", "")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing MAX_PRICE, got nil")
-	}
-}
-
-func TestLoad_InvalidMaxPrice(t *testing.T) {
-	setEnv(t)
-	t.Setenv("MAX_PRICE", "not-a-number")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid MAX_PRICE, got nil")
 	}
 }
 

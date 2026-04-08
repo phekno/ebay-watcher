@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,8 +24,6 @@ func newTestServer(t *testing.T) (*Server, *store.Store) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.Config{
-		Queries:      []string{"thinkpad", "macbook"},
-		MaxPrice:     500,
 		PollInterval: time.Hour,
 	}
 
@@ -52,7 +52,10 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestQueriesEndpoint(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, st := newTestServer(t)
+
+	st.CreateWatch("thinkpad", 500)
+	st.CreateWatch("macbook", 800)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/queries", nil)
 	w := httptest.NewRecorder()
@@ -77,7 +80,7 @@ func TestQueriesEndpoint(t *testing.T) {
 func TestStatsEndpoint(t *testing.T) {
 	srv, st := newTestServer(t)
 
-	// Add some data
+	st.CreateWatch("thinkpad", 500)
 	_ = st.UpsertListing(store.Listing{
 		ID: "a", Query: "thinkpad", Title: "X1", Price: 400, Currency: "USD", URL: "http://a",
 	})
@@ -93,11 +96,10 @@ func TestStatsEndpoint(t *testing.T) {
 	}
 
 	var stats struct {
-		TotalSeen     int      `json:"total_seen"`
-		TotalNotified int      `json:"total_notified"`
-		Queries       []string `json:"queries"`
-		MaxPrice      float64  `json:"max_price"`
-		PollInterval  string   `json:"poll_interval"`
+		TotalSeen     int    `json:"total_seen"`
+		TotalNotified int    `json:"total_notified"`
+		WatchCount    int    `json:"watch_count"`
+		PollInterval  string `json:"poll_interval"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -108,8 +110,8 @@ func TestStatsEndpoint(t *testing.T) {
 	if stats.TotalNotified != 1 {
 		t.Errorf("TotalNotified = %d, want 1", stats.TotalNotified)
 	}
-	if stats.MaxPrice != 500 {
-		t.Errorf("MaxPrice = %f, want 500", stats.MaxPrice)
+	if stats.WatchCount != 1 {
+		t.Errorf("WatchCount = %d, want 1", stats.WatchCount)
 	}
 	if stats.PollInterval != "1h0m0s" {
 		t.Errorf("PollInterval = %q, want 1h0m0s", stats.PollInterval)
@@ -194,7 +196,10 @@ func TestPriceHistoryEndpoint(t *testing.T) {
 }
 
 func TestPriceHistoryEndpoint_DefaultQuery(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, st := newTestServer(t)
+
+	// Create a watch so the default query comes from there
+	st.CreateWatch("thinkpad", 500)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/price-history", nil)
 	w := httptest.NewRecorder()
@@ -213,4 +218,133 @@ func TestPriceHistoryEndpoint_DefaultQuery(t *testing.T) {
 	if resp.Query != "thinkpad" {
 		t.Errorf("default query = %q, want thinkpad", resp.Query)
 	}
+}
+
+// ── Watch CRUD endpoint tests ───────────────────────────────
+
+func TestCreateWatchEndpoint(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"query":"thinkpad","max_price":500}`
+	req := httptest.NewRequest(http.MethodPost, "/api/watches", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", w.Code)
+	}
+
+	var watch store.Watch
+	if err := json.NewDecoder(w.Body).Decode(&watch); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if watch.Query != "thinkpad" {
+		t.Errorf("Query = %q, want thinkpad", watch.Query)
+	}
+	if watch.MaxPrice != 500 {
+		t.Errorf("MaxPrice = %f, want 500", watch.MaxPrice)
+	}
+	if !watch.Enabled {
+		t.Error("expected enabled")
+	}
+}
+
+func TestCreateWatchEndpoint_InvalidBody(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"query":"","max_price":0}`
+	req := httptest.NewRequest(http.MethodPost, "/api/watches", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestListWatchesEndpoint(t *testing.T) {
+	srv, st := newTestServer(t)
+
+	st.CreateWatch("thinkpad", 500)
+	st.CreateWatch("macbook", 800)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/watches", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	var watches []store.Watch
+	if err := json.NewDecoder(w.Body).Decode(&watches); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(watches) != 2 {
+		t.Fatalf("expected 2 watches, got %d", len(watches))
+	}
+}
+
+func TestUpdateWatchEndpoint(t *testing.T) {
+	srv, st := newTestServer(t)
+
+	created, _ := st.CreateWatch("thinkpad", 500)
+
+	body := `{"query":"dell xps","max_price":700,"enabled":false}`
+	req := httptest.NewRequest(http.MethodPut, "/api/watches/"+itoa(created.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	var watch store.Watch
+	if err := json.NewDecoder(w.Body).Decode(&watch); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if watch.Query != "dell xps" {
+		t.Errorf("Query = %q, want dell xps", watch.Query)
+	}
+	if watch.Enabled {
+		t.Error("expected disabled")
+	}
+}
+
+func TestDeleteWatchEndpoint(t *testing.T) {
+	srv, st := newTestServer(t)
+
+	created, _ := st.CreateWatch("thinkpad", 500)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/watches/"+itoa(created.ID), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", w.Code)
+	}
+
+	watches, _ := st.ListWatches()
+	if len(watches) != 0 {
+		t.Errorf("expected 0 watches after delete, got %d", len(watches))
+	}
+}
+
+func TestDeleteWatchEndpoint_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/watches/999", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }

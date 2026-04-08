@@ -35,7 +35,7 @@ func main() {
 	defer func() { _ = db.Close() }()
 
 	n := notifier.NewDiscord(cfg.DiscordWebhookURL)
-	w := watcher.New(cfg, db, n)
+	w := watcher.New(cfg.EbayClientID, cfg.EbaySecret, db, n)
 	s := scheduler.New(cfg.PollInterval, w.Run)
 
 	srv := server.New(cfg, db)
@@ -50,8 +50,6 @@ func main() {
 	slog.Info("ebay-watcher starting",
 		"listen", cfg.ListenAddr,
 		"poll_interval", cfg.PollInterval,
-		"max_price", cfg.MaxPrice,
-		"queries", cfg.Queries,
 	)
 
 	// HTTP server in background

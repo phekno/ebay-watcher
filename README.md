@@ -23,11 +23,11 @@ All config via environment variables:
 | `EBAY_CLIENT_ID`     | ✅       | —               | eBay developer app Client ID             |
 | `EBAY_CLIENT_SECRET` | ✅       | —               | eBay developer app Client Secret         |
 | `DISCORD_WEBHOOK_URL`| ✅       | —               | Discord channel webhook URL              |
-| `SEARCH_QUERIES`     | ✅       | —               | Comma-separated search query strings     |
-| `MAX_PRICE`          | ✅       | —               | Maximum listing price to alert on        |
 | `POLL_INTERVAL`      | ❌       | `1h`            | How often to poll (Go duration string)   |
 | `DATABASE_PATH`      | ❌       | `/data/seen.db` | SQLite database path                     |
-| `HTTP_PORT`          | ❌       | `8080`          | Port for the web UI                      |
+| `LISTEN_ADDR`        | ❌       | `:8080`         | Address for the web UI                   |
+
+Search queries and price thresholds are managed through the web UI as **watches** — each watch has its own query and max price.
 
 ## eBay API Setup
 
@@ -41,12 +41,11 @@ All config via environment variables:
 export EBAY_CLIENT_ID=your-id
 export EBAY_CLIENT_SECRET=your-secret
 export DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-export SEARCH_QUERIES="16TB SAS 12Gb"
-export MAX_PRICE=400
 export POLL_INTERVAL=5m   # short for testing
 
 go run .
 # UI: http://localhost:8080
+# Add watches (search queries + price thresholds) via the web UI
 ```
 
 ## Kubernetes (Flux)

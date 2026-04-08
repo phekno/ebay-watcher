@@ -4,23 +4,20 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/phekno/ebay-watcher/internal/config"
 	"github.com/phekno/ebay-watcher/internal/ebay"
 	"github.com/phekno/ebay-watcher/internal/notifier"
 	"github.com/phekno/ebay-watcher/internal/store"
 )
 
 type Watcher struct {
-	cfg      *config.Config
 	ebay     *ebay.Client
 	store    *store.Store
 	notifier *notifier.Discord
 }
 
-func New(cfg *config.Config, s *store.Store, n *notifier.Discord) *Watcher {
+func New(ebayClientID, ebaySecret string, s *store.Store, n *notifier.Discord) *Watcher {
 	return &Watcher{
-		cfg:      cfg,
-		ebay:     ebay.NewClient(cfg.EbayClientID, cfg.EbaySecret),
+		ebay:     ebay.NewClient(ebayClientID, ebaySecret),
 		store:    s,
 		notifier: n,
 	}
@@ -31,16 +28,26 @@ func (w *Watcher) Run(ctx context.Context) {
 		slog.Warn("failed to record poll", "error", err)
 	}
 
-	for _, query := range w.cfg.Queries {
-		slog.Info("searching eBay", "query", query, "max_price", w.cfg.MaxPrice)
+	watches, err := w.store.ListEnabledWatches()
+	if err != nil {
+		slog.Error("failed to list watches", "error", err)
+		return
+	}
+	if len(watches) == 0 {
+		slog.Info("no enabled watches — skipping poll")
+		return
+	}
 
-		result, err := w.ebay.Search(ctx, query, w.cfg.MaxPrice)
+	for _, watch := range watches {
+		slog.Info("searching eBay", "query", watch.Query, "max_price", watch.MaxPrice)
+
+		result, err := w.ebay.Search(ctx, watch.Query, watch.MaxPrice)
 		if err != nil {
-			slog.Error("ebay search failed", "query", query, "error", err)
+			slog.Error("ebay search failed", "query", watch.Query, "error", err)
 			continue
 		}
 
-		slog.Info("search complete", "query", query, "total", result.Total, "returned", len(result.Listings))
+		slog.Info("search complete", "query", watch.Query, "total", result.Total, "returned", len(result.Listings))
 
 		for _, listing := range result.Listings {
 			seen, err := w.store.HasSeen(listing.ID)
@@ -49,17 +56,16 @@ func (w *Watcher) Run(ctx context.Context) {
 				continue
 			}
 
-			// Always upsert — records price history even for already-seen listings
 			sl := store.Listing{
 				ID:        listing.ID,
-				Query:     query,
+				Query:     watch.Query,
 				Title:     listing.Title,
 				Price:     listing.Price,
 				Currency:  listing.Currency,
 				URL:       listing.URL,
 				Condition: listing.Condition,
 				Seller:    listing.Seller,
-				Notified:  seen, // preserve existing notified state
+				Notified:  seen,
 			}
 			if err := w.store.UpsertListing(sl); err != nil {
 				slog.Error("store upsert error", "id", listing.ID, "error", err)
@@ -76,9 +82,8 @@ func (w *Watcher) Run(ctx context.Context) {
 				"condition", listing.Condition,
 			)
 
-			if err := w.notifier.Notify(ctx, query, listing); err != nil {
+			if err := w.notifier.Notify(ctx, watch.Query, listing); err != nil {
 				slog.Error("discord notify failed", "id", listing.ID, "error", err)
-				// Don't mark notified — retry next poll
 				continue
 			}
 

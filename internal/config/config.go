@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -11,8 +10,6 @@ import (
 type Config struct {
 	EbayClientID      string
 	EbaySecret        string
-	Queries           []string
-	MaxPrice          float64
 	DiscordWebhookURL string
 	DatabasePath      string
 	PollInterval      time.Duration
@@ -42,27 +39,8 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
 
-	raw := os.Getenv("SEARCH_QUERIES")
-	for _, q := range strings.Split(raw, ",") {
-		if q = strings.TrimSpace(q); q != "" {
-			cfg.Queries = append(cfg.Queries, q)
-		}
-	}
-	if len(cfg.Queries) == 0 {
-		return nil, fmt.Errorf("SEARCH_QUERIES must contain at least one query")
-	}
-
-	maxStr := os.Getenv("MAX_PRICE")
-	if maxStr == "" {
-		return nil, fmt.Errorf("MAX_PRICE is required")
-	}
-	p, err := strconv.ParseFloat(maxStr, 64)
-	if err != nil {
-		return nil, fmt.Errorf("MAX_PRICE must be a number: %w", err)
-	}
-	cfg.MaxPrice = p
-
 	pollStr := getOr("POLL_INTERVAL", "1h")
+	var err error
 	cfg.PollInterval, err = time.ParseDuration(pollStr)
 	if err != nil {
 		return nil, fmt.Errorf("POLL_INTERVAL invalid: %w", err)

@@ -34,6 +34,14 @@ type PricePoint struct {
 	Query  string    `json:"query"`
 }
 
+type Watch struct {
+	ID        int       `json:"id"`
+	Query     string    `json:"query"`
+	MaxPrice  float64   `json:"max_price"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Stats struct {
 	TotalSeen     int        `json:"total_seen"`
 	TotalNotified int        `json:"total_notified"`
@@ -95,6 +103,14 @@ func migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_price_history_query ON price_history(query, seen_at);
 		CREATE INDEX IF NOT EXISTS idx_listings_query ON listings(query);
 		CREATE INDEX IF NOT EXISTS idx_listings_notified ON listings(notified);
+
+		CREATE TABLE IF NOT EXISTS watches (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			query      TEXT NOT NULL,
+			max_price  REAL NOT NULL,
+			enabled    INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
 	`)
 	return err
 }
@@ -205,6 +221,92 @@ func (s *Store) GetStats() (*Stats, error) {
 	}
 
 	return stats, nil
+}
+
+// ── Watch CRUD ──────────────────────────────────────────────
+
+func (s *Store) ListWatches() ([]Watch, error) {
+	rows, err := s.db.Query(`SELECT id, query, max_price, enabled, created_at FROM watches ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanWatches(rows)
+}
+
+func (s *Store) ListEnabledWatches() ([]Watch, error) {
+	rows, err := s.db.Query(`SELECT id, query, max_price, enabled, created_at FROM watches WHERE enabled = 1 ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanWatches(rows)
+}
+
+func (s *Store) GetWatch(id int) (*Watch, error) {
+	var w Watch
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT id, query, max_price, enabled, created_at FROM watches WHERE id = ?`, id,
+	).Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &createdAt)
+	if err != nil {
+		return nil, err
+	}
+	w.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	return &w, nil
+}
+
+func (s *Store) CreateWatch(query string, maxPrice float64) (*Watch, error) {
+	res, err := s.db.Exec(
+		`INSERT INTO watches (query, max_price) VALUES (?, ?)`,
+		query, maxPrice,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create watch: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return s.GetWatch(int(id))
+}
+
+func (s *Store) UpdateWatch(id int, query string, maxPrice float64, enabled bool) error {
+	res, err := s.db.Exec(
+		`UPDATE watches SET query = ?, max_price = ?, enabled = ? WHERE id = ?`,
+		query, maxPrice, enabled, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update watch: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("watch %d not found", id)
+	}
+	return nil
+}
+
+func (s *Store) DeleteWatch(id int) error {
+	res, err := s.db.Exec(`DELETE FROM watches WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete watch: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("watch %d not found", id)
+	}
+	return nil
+}
+
+func scanWatches(rows *sql.Rows) ([]Watch, error) {
+	var watches []Watch
+	for rows.Next() {
+		var w Watch
+		var createdAt string
+		if err := rows.Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &createdAt); err != nil {
+			return nil, err
+		}
+		w.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		watches = append(watches, w)
+	}
+	return watches, rows.Err()
 }
 
 func scanListings(rows *sql.Rows) ([]Listing, error) {
