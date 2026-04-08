@@ -253,8 +253,8 @@ func TestCreateWatch(t *testing.T) {
 func TestListWatches(t *testing.T) {
 	s := newTestStore(t)
 
-	s.CreateWatch("thinkpad", 500)
-	s.CreateWatch("macbook", 800)
+	_, _ = s.CreateWatch("thinkpad", 500)
+	_, _ = s.CreateWatch("macbook", 800)
 
 	watches, err := s.ListWatches()
 	if err != nil {
@@ -272,10 +272,10 @@ func TestListEnabledWatches(t *testing.T) {
 	s := newTestStore(t)
 
 	w1, _ := s.CreateWatch("thinkpad", 500)
-	s.CreateWatch("macbook", 800)
+	_, _ = s.CreateWatch("macbook", 800)
 
 	// Disable the first one
-	s.UpdateWatch(w1.ID, w1.Query, w1.MaxPrice, false)
+	_ = s.UpdateWatch(w1.ID, w1.Query, w1.MaxPrice, false)
 
 	watches, err := s.ListEnabledWatches()
 	if err != nil {
