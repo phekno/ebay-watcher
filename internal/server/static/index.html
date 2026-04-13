@@ -191,9 +191,10 @@
 
     .w-cat-wrap { position: relative; }
     .w-cat-list {
-      position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+      position: absolute; bottom: 100%; left: 0; min-width: 280px; z-index: 10;
       background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-      margin-top: 4px; max-height: 200px; overflow-y: auto;
+      margin-bottom: 4px; max-height: 200px; overflow-y: auto;
+      box-shadow: 0 -4px 12px rgba(0,0,0,.3);
     }
     .w-cat-item {
       padding: 7px 11px; cursor: pointer; font-size: 12px;
@@ -495,33 +496,8 @@ async function editWatch(id) {
   if (priceStr === null) return;
   const max_price = parseFloat(priceStr);
   if (!query || isNaN(max_price) || max_price <= 0) { alert('Invalid input'); return; }
-
-  let category_id = w.category_id || '';
-  try {
-    const cats = await api('/api/categories?query=' + encodeURIComponent(query));
-    if (cats.length) {
-      const options = cats.map((c, i) => `${i + 1}. ${c.name} (${c.id}, ${c.match_count} results)`).join('\n');
-      const pick = prompt(
-        `eBay Category ID (current: ${category_id || 'none'})\n\nSuggested categories:\n${options}\n\nEnter a number to select, or type a category ID directly:`,
-        category_id
-      );
-      if (pick === null) return;
-      const num = parseInt(pick);
-      if (num >= 1 && num <= cats.length) {
-        category_id = cats[num - 1].id;
-      } else {
-        category_id = pick;
-      }
-    } else {
-      const pick = prompt('eBay Category ID (blank for none):', category_id);
-      if (pick === null) return;
-      category_id = pick;
-    }
-  } catch {
-    const pick = prompt('eBay Category ID (blank for none):', category_id);
-    if (pick === null) return;
-    category_id = pick;
-  }
+  const category_id = prompt('Category ID (blank for none):', w.category_id || '');
+  if (category_id === null) return;
 
   await fetch('/api/watches/' + id, {
     method: 'PUT', headers: {'Content-Type':'application/json'},

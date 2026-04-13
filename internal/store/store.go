@@ -305,6 +305,16 @@ func (s *Store) UpdateWatch(id int, query string, maxPrice float64, categoryID s
 }
 
 func (s *Store) DeleteWatch(id int) error {
+	// Look up the watch first so we can clean up its listings.
+	w, err := s.GetWatch(id)
+	if err != nil {
+		return fmt.Errorf("watch %d not found", id)
+	}
+
+	// Delete price history and listings for this query.
+	_, _ = s.db.Exec(`DELETE FROM price_history WHERE query = $1`, w.Query)
+	_, _ = s.db.Exec(`DELETE FROM listings WHERE query = $1`, w.Query)
+
 	res, err := s.db.Exec(`DELETE FROM watches WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete watch: %w", err)
