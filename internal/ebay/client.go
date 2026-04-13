@@ -49,6 +49,12 @@ type SearchResult struct {
 	Total    int
 }
 
+type CategorySuggestion struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	MatchCount int    `json:"match_count"`
+}
+
 func (c *Client) Search(ctx context.Context, query string, maxPrice float64, categoryID string) (*SearchResult, error) {
 	if err := c.ensureToken(ctx); err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
@@ -130,6 +136,64 @@ func (c *Client) Search(ctx context.Context, query string, maxPrice float64, cat
 	}
 
 	return result, nil
+}
+
+func (c *Client) SearchCategories(ctx context.Context, query string) ([]CategorySuggestion, error) {
+	if err := c.ensureToken(ctx); err != nil {
+		return nil, fmt.Errorf("auth: %w", err)
+	}
+
+	params := url.Values{}
+	params.Set("q", query)
+	params.Set("fieldgroups", "CATEGORY_REFINEMENTS")
+	params.Set("limit", "1")
+
+	reqURL := searchURL + "?" + params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-EBAY-C-MARKETPLACE-ID", "EBAY_US")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("category request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ebay API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp struct {
+		Refinement struct {
+			CategoryDistributions []struct {
+				CategoryID   string `json:"categoryId"`
+				CategoryName string `json:"categoryName"`
+				MatchCount   int    `json:"matchCount"`
+			} `json:"categoryDistributions"`
+		} `json:"refinement"`
+	}
+
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	var suggestions []CategorySuggestion
+	for _, cat := range apiResp.Refinement.CategoryDistributions {
+		suggestions = append(suggestions, CategorySuggestion{
+			ID:         cat.CategoryID,
+			Name:       cat.CategoryName,
+			MatchCount: cat.MatchCount,
+		})
+	}
+	return suggestions, nil
 }
 
 func (c *Client) ensureToken(ctx context.Context) error {

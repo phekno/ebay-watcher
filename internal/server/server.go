@@ -8,19 +8,21 @@ import (
 	"time"
 
 	"github.com/phekno/ebay-watcher/internal/config"
+	"github.com/phekno/ebay-watcher/internal/ebay"
 	"github.com/phekno/ebay-watcher/internal/store"
 )
 
 
 type Server struct {
-	cfg       *config.Config
-	store     *store.Store
-	mux       *http.ServeMux
+	cfg        *config.Config
+	store      *store.Store
+	ebay       *ebay.Client
+	mux        *http.ServeMux
 	onNewWatch func()
 }
 
-func New(cfg *config.Config, s *store.Store, onNewWatch func()) *Server {
-	srv := &Server{cfg: cfg, store: s, mux: http.NewServeMux(), onNewWatch: onNewWatch}
+func New(cfg *config.Config, s *store.Store, ebayClient *ebay.Client, onNewWatch func()) *Server {
+	srv := &Server{cfg: cfg, store: s, ebay: ebayClient, mux: http.NewServeMux(), onNewWatch: onNewWatch}
 	srv.routes()
 	return srv
 }
@@ -34,6 +36,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/listings", s.handleListings)
 	s.mux.HandleFunc("GET /api/price-history", s.handlePriceHistory)
 	s.mux.HandleFunc("GET /api/queries", s.handleQueries)
+	s.mux.HandleFunc("GET /api/categories", s.handleCategories)
 	s.mux.HandleFunc("GET /api/watches", s.handleListWatches)
 	s.mux.HandleFunc("POST /api/watches", s.handleCreateWatch)
 	s.mux.HandleFunc("PUT /api/watches/{id}", s.handleUpdateWatch)
@@ -131,6 +134,24 @@ func (s *Server) handleQueries(w http.ResponseWriter, r *http.Request) {
 		queries = append(queries, wt.Query)
 	}
 	jsonOK(w, queries)
+}
+
+func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		http.Error(w, "query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	categories, err := s.ebay.SearchCategories(r.Context(), query)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if categories == nil {
+		categories = []ebay.CategorySuggestion{}
+	}
+	jsonOK(w, categories)
 }
 
 // ── Watch CRUD ──────────────────────────────────────────────

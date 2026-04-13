@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/phekno/ebay-watcher/internal/config"
+	"github.com/phekno/ebay-watcher/internal/ebay"
 	"github.com/phekno/ebay-watcher/internal/notifier"
 	"github.com/phekno/ebay-watcher/internal/scheduler"
 	"github.com/phekno/ebay-watcher/internal/server"
@@ -34,11 +35,12 @@ func main() {
 	}
 	defer func() { _ = db.Close() }()
 
+	ebayClient := ebay.NewClient(cfg.EbayClientID, cfg.EbaySecret)
 	n := notifier.NewDiscord(cfg.DiscordWebhookURL)
-	w := watcher.New(cfg.EbayClientID, cfg.EbaySecret, db, n)
+	w := watcher.New(ebayClient, db, n)
 	s := scheduler.New(cfg.PollInterval, w.Run)
 
-	srv := server.New(cfg, db, s.TriggerNow)
+	srv := server.New(cfg, db, ebayClient, s.TriggerNow)
 	httpServer := &http.Server{
 		Addr:    cfg.ListenAddr,
 		Handler: srv.Handler(),

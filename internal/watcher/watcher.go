@@ -15,9 +15,9 @@ type Watcher struct {
 	notifier *notifier.Discord
 }
 
-func New(ebayClientID, ebaySecret string, s *store.Store, n *notifier.Discord) *Watcher {
+func New(ebayClient *ebay.Client, s *store.Store, n *notifier.Discord) *Watcher {
 	return &Watcher{
-		ebay:     ebay.NewClient(ebayClientID, ebaySecret),
+		ebay:     ebayClient,
 		store:    s,
 		notifier: n,
 	}
