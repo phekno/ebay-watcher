@@ -134,14 +134,11 @@ func (s *Store) Close() error {
 
 // Truncate removes all data from all tables. Used by tests.
 func (s *Store) Truncate() error {
-	// Delete in FK-dependency order, one statement at a time so
-	// each completes before the next begins.
-	for _, table := range []string{"price_history", "listings", "poll_log", "watches"} {
-		if _, err := s.db.Exec("DELETE FROM " + table); err != nil {
-			return fmt.Errorf("truncate %s: %w", table, err)
-		}
-	}
-	return nil
+	// Single TRUNCATE is atomic and acquires ACCESS EXCLUSIVE locks on all
+	// tables at once, preventing cross-package test interference. CASCADE
+	// handles FK dependencies.
+	_, err := s.db.Exec(`TRUNCATE listings, price_history, poll_log, watches RESTART IDENTITY CASCADE`)
+	return err
 }
 
 func (s *Store) HasSeen(id string) (bool, error) {
