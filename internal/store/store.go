@@ -134,15 +134,14 @@ func (s *Store) Close() error {
 
 // Truncate removes all data from all tables. Used by tests.
 func (s *Store) Truncate() error {
-	// Use DELETE instead of TRUNCATE to avoid ACCESS EXCLUSIVE locks
-	// that can deadlock with concurrent test packages.
-	_, err := s.db.Exec(`
-		DELETE FROM price_history;
-		DELETE FROM listings;
-		DELETE FROM poll_log;
-		DELETE FROM watches;
-	`)
-	return err
+	// Delete in FK-dependency order, one statement at a time so
+	// each completes before the next begins.
+	for _, table := range []string{"price_history", "listings", "poll_log", "watches"} {
+		if _, err := s.db.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("truncate %s: %w", table, err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) HasSeen(id string) (bool, error) {
