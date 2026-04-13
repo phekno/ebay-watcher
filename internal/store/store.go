@@ -77,7 +77,7 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(42)`); err != nil {
 		return err
