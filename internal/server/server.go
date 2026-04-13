@@ -13,13 +13,14 @@ import (
 
 
 type Server struct {
-	cfg   *config.Config
-	store *store.Store
-	mux   *http.ServeMux
+	cfg       *config.Config
+	store     *store.Store
+	mux       *http.ServeMux
+	onNewWatch func()
 }
 
-func New(cfg *config.Config, s *store.Store) *Server {
-	srv := &Server{cfg: cfg, store: s, mux: http.NewServeMux()}
+func New(cfg *config.Config, s *store.Store, onNewWatch func()) *Server {
+	srv := &Server{cfg: cfg, store: s, mux: http.NewServeMux(), onNewWatch: onNewWatch}
 	srv.routes()
 	return srv
 }
@@ -169,6 +170,10 @@ func (s *Server) handleCreateWatch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(watch); err != nil {
 		slog.Error("json encode error", "error", err)
+	}
+
+	if s.onNewWatch != nil {
+		s.onNewWatch()
 	}
 }
 

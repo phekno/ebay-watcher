@@ -33,7 +33,7 @@ func newTestServer(t *testing.T) (*Server, *store.Store) {
 		PollInterval: time.Hour,
 	}
 
-	srv := New(cfg, s)
+	srv := New(cfg, s, nil)
 	return srv, s
 }
 

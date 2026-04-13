@@ -38,7 +38,7 @@ func main() {
 	w := watcher.New(cfg.EbayClientID, cfg.EbaySecret, db, n)
 	s := scheduler.New(cfg.PollInterval, w.Run)
 
-	srv := server.New(cfg, db)
+	srv := server.New(cfg, db, s.TriggerNow)
 	httpServer := &http.Server{
 		Addr:    cfg.ListenAddr,
 		Handler: srv.Handler(),
