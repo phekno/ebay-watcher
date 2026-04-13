@@ -3,7 +3,8 @@
     "allow": [
       "WebFetch(domain:developer.ebay.com)",
       "Bash(go get:*)",
-      "Bash(go mod:*)"
+      "Bash(go mod:*)",
+      "Bash(gh run:*)"
     ]
   }
 }
