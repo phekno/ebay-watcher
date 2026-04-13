@@ -308,6 +308,7 @@
     <form class="w-form" id="addWatchForm">
       <input class="w-input w-input-query" id="newQuery" placeholder="Search query…" required />
       <input class="w-input w-input-price" id="newMaxPrice" type="number" step="0.01" min="0.01" placeholder="Max price" required />
+      <input class="w-input w-input-price" id="newCategoryID" placeholder="Category ID" />
       <button class="w-submit" type="submit">Add Watch</button>
     </form>
   </div>
@@ -423,6 +424,7 @@ function renderWatches() {
         <button class="w-toggle${w.enabled ? ' on' : ''}" onclick="toggleWatch(${w.id}, ${!w.enabled})" title="${w.enabled ? 'Disable' : 'Enable'}"></button>
         <span class="w-query" title="${esc(w.query)}">${esc(w.query)}</span>
         <span class="w-price">&le; ${fp(w.max_price)}</span>
+        ${w.category_id ? `<span class="qtag" title="eBay category ${esc(w.category_id)}">${esc(w.category_id)}</span>` : ''}
       </div>
       <div class="w-actions">
         <button class="w-btn" onclick="editWatch(${w.id})">Edit</button>
@@ -474,9 +476,11 @@ async function editWatch(id) {
   if (priceStr === null) return;
   const max_price = parseFloat(priceStr);
   if (!query || isNaN(max_price) || max_price <= 0) { alert('Invalid input'); return; }
+  const category_id = prompt('eBay Category ID (blank for none):', w.category_id || '');
+  if (category_id === null) return;
   await fetch('/api/watches/' + id, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ query, max_price })
+    body: JSON.stringify({ query, max_price, category_id })
   });
   await loadWatches();
 }
@@ -522,6 +526,7 @@ $('addWatchForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const query = $('newQuery').value.trim();
   const max_price = parseFloat($('newMaxPrice').value);
+  const category_id = $('newCategoryID').value.trim();
   if (!query || isNaN(max_price) || max_price <= 0) return;
 
   const btn = e.target.querySelector('.w-submit');
@@ -529,10 +534,11 @@ $('addWatchForm').addEventListener('submit', async (e) => {
   try {
     await fetch('/api/watches', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ query, max_price })
+      body: JSON.stringify({ query, max_price, category_id })
     });
     $('newQuery').value = '';
     $('newMaxPrice').value = '';
+    $('newCategoryID').value = '';
     await loadWatches();
     await loadStats();
   } finally {

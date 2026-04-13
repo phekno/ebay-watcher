@@ -239,7 +239,7 @@ func TestGetStats_Empty(t *testing.T) {
 func TestCreateWatch(t *testing.T) {
 	s := newTestStore(t)
 
-	w, err := s.CreateWatch("thinkpad", 500)
+	w, err := s.CreateWatch("thinkpad", 500, "")
 	if err != nil {
 		t.Fatalf("create watch: %v", err)
 	}
@@ -260,8 +260,8 @@ func TestCreateWatch(t *testing.T) {
 func TestListWatches(t *testing.T) {
 	s := newTestStore(t)
 
-	_, _ = s.CreateWatch("thinkpad", 500)
-	_, _ = s.CreateWatch("macbook", 800)
+	_, _ = s.CreateWatch("thinkpad", 500, "")
+	_, _ = s.CreateWatch("macbook", 800, "")
 
 	watches, err := s.ListWatches()
 	if err != nil {
@@ -278,11 +278,11 @@ func TestListWatches(t *testing.T) {
 func TestListEnabledWatches(t *testing.T) {
 	s := newTestStore(t)
 
-	w1, _ := s.CreateWatch("thinkpad", 500)
-	_, _ = s.CreateWatch("macbook", 800)
+	w1, _ := s.CreateWatch("thinkpad", 500, "")
+	_, _ = s.CreateWatch("macbook", 800, "")
 
 	// Disable the first one
-	_ = s.UpdateWatch(w1.ID, w1.Query, w1.MaxPrice, false)
+	_ = s.UpdateWatch(w1.ID, w1.Query, w1.MaxPrice, w1.CategoryID, false)
 
 	watches, err := s.ListEnabledWatches()
 	if err != nil {
@@ -299,9 +299,9 @@ func TestListEnabledWatches(t *testing.T) {
 func TestUpdateWatch(t *testing.T) {
 	s := newTestStore(t)
 
-	w, _ := s.CreateWatch("thinkpad", 500)
+	w, _ := s.CreateWatch("thinkpad", 500, "")
 
-	err := s.UpdateWatch(w.ID, "dell xps", 700, false)
+	err := s.UpdateWatch(w.ID, "dell xps", 700, "", false)
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestUpdateWatch(t *testing.T) {
 func TestUpdateWatch_NotFound(t *testing.T) {
 	s := newTestStore(t)
 
-	err := s.UpdateWatch(999, "q", 100, true)
+	err := s.UpdateWatch(999, "q", 100, "", true)
 	if err == nil {
 		t.Fatal("expected error for missing watch")
 	}
@@ -333,7 +333,7 @@ func TestUpdateWatch_NotFound(t *testing.T) {
 func TestDeleteWatch(t *testing.T) {
 	s := newTestStore(t)
 
-	w, _ := s.CreateWatch("thinkpad", 500)
+	w, _ := s.CreateWatch("thinkpad", 500, "")
 
 	err := s.DeleteWatch(w.ID)
 	if err != nil {

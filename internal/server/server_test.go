@@ -60,8 +60,8 @@ func TestHealthEndpoint(t *testing.T) {
 func TestQueriesEndpoint(t *testing.T) {
 	srv, st := newTestServer(t)
 
-	_, _ = st.CreateWatch("thinkpad", 500)
-	_, _ = st.CreateWatch("macbook", 800)
+	_, _ = st.CreateWatch("thinkpad", 500, "")
+	_, _ = st.CreateWatch("macbook", 800, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/queries", nil)
 	w := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestQueriesEndpoint(t *testing.T) {
 func TestStatsEndpoint(t *testing.T) {
 	srv, st := newTestServer(t)
 
-	_, _ = st.CreateWatch("thinkpad", 500)
+	_, _ = st.CreateWatch("thinkpad", 500, "")
 	_ = st.UpsertListing(store.Listing{
 		ID: "a", Query: "thinkpad", Title: "X1", Price: 400, Currency: "USD", URL: "http://a",
 	})
@@ -205,7 +205,7 @@ func TestPriceHistoryEndpoint_DefaultQuery(t *testing.T) {
 	srv, st := newTestServer(t)
 
 	// Create a watch so the default query comes from there
-	_, _ = st.CreateWatch("thinkpad", 500)
+	_, _ = st.CreateWatch("thinkpad", 500, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/price-history", nil)
 	w := httptest.NewRecorder()
@@ -273,8 +273,8 @@ func TestCreateWatchEndpoint_InvalidBody(t *testing.T) {
 func TestListWatchesEndpoint(t *testing.T) {
 	srv, st := newTestServer(t)
 
-	_, _ = st.CreateWatch("thinkpad", 500)
-	_, _ = st.CreateWatch("macbook", 800)
+	_, _ = st.CreateWatch("thinkpad", 500, "")
+	_, _ = st.CreateWatch("macbook", 800, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/watches", nil)
 	w := httptest.NewRecorder()
@@ -296,7 +296,7 @@ func TestListWatchesEndpoint(t *testing.T) {
 func TestUpdateWatchEndpoint(t *testing.T) {
 	srv, st := newTestServer(t)
 
-	created, _ := st.CreateWatch("thinkpad", 500)
+	created, _ := st.CreateWatch("thinkpad", 500, "")
 
 	body := `{"query":"dell xps","max_price":700,"enabled":false}`
 	req := httptest.NewRequest(http.MethodPut, "/api/watches/"+itoa(created.ID), strings.NewReader(body))
@@ -323,7 +323,7 @@ func TestUpdateWatchEndpoint(t *testing.T) {
 func TestDeleteWatchEndpoint(t *testing.T) {
 	srv, st := newTestServer(t)
 
-	created, _ := st.CreateWatch("thinkpad", 500)
+	created, _ := st.CreateWatch("thinkpad", 500, "")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/watches/"+itoa(created.ID), nil)
 	w := httptest.NewRecorder()

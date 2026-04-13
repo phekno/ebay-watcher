@@ -49,7 +49,7 @@ type SearchResult struct {
 	Total    int
 }
 
-func (c *Client) Search(ctx context.Context, query string, maxPrice float64) (*SearchResult, error) {
+func (c *Client) Search(ctx context.Context, query string, maxPrice float64, categoryID string) (*SearchResult, error) {
 	if err := c.ensureToken(ctx); err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
 	}
@@ -60,6 +60,9 @@ func (c *Client) Search(ctx context.Context, query string, maxPrice float64) (*S
 		"price:[..%s],priceCurrency:USD,conditions:{USED|NEW|SELLER_REFURBISHED|EXCELLENT_REFURBISHED|VERY_GOOD_REFURBISHED|GOOD_REFURBISHED|LIKE_NEW}",
 		strconv.FormatFloat(maxPrice, 'f', 2, 64),
 	))
+	if categoryID != "" {
+		params.Set("category_ids", categoryID)
+	}
 	params.Set("sort", "price")
 	params.Set("limit", "50")
 

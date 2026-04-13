@@ -41,7 +41,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	for _, watch := range watches {
 		slog.Info("searching eBay", "query", watch.Query, "max_price", watch.MaxPrice)
 
-		result, err := w.ebay.Search(ctx, watch.Query, watch.MaxPrice)
+		result, err := w.ebay.Search(ctx, watch.Query, watch.MaxPrice, watch.CategoryID)
 		if err != nil {
 			slog.Error("ebay search failed", "query", watch.Query, "error", err)
 			continue

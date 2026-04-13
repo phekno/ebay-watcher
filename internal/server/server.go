@@ -149,8 +149,9 @@ func (s *Server) handleListWatches(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateWatch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Query    string  `json:"query"`
-		MaxPrice float64 `json:"max_price"`
+		Query      string  `json:"query"`
+		MaxPrice   float64 `json:"max_price"`
+		CategoryID string  `json:"category_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -161,7 +162,7 @@ func (s *Server) handleCreateWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	watch, err := s.store.CreateWatch(body.Query, body.MaxPrice)
+	watch, err := s.store.CreateWatch(body.Query, body.MaxPrice, body.CategoryID)
 	if err != nil {
 		httpError(w, err, http.StatusInternalServerError)
 		return
@@ -185,9 +186,10 @@ func (s *Server) handleUpdateWatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Query    string  `json:"query"`
-		MaxPrice float64 `json:"max_price"`
-		Enabled  *bool   `json:"enabled"`
+		Query      string  `json:"query"`
+		MaxPrice   float64 `json:"max_price"`
+		CategoryID *string `json:"category_id"`
+		Enabled    *bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -208,12 +210,16 @@ func (s *Server) handleUpdateWatch(w http.ResponseWriter, r *http.Request) {
 	if body.MaxPrice > 0 {
 		maxPrice = body.MaxPrice
 	}
+	categoryID := existing.CategoryID
+	if body.CategoryID != nil {
+		categoryID = *body.CategoryID
+	}
 	enabled := existing.Enabled
 	if body.Enabled != nil {
 		enabled = *body.Enabled
 	}
 
-	if err := s.store.UpdateWatch(id, query, maxPrice, enabled); err != nil {
+	if err := s.store.UpdateWatch(id, query, maxPrice, categoryID, enabled); err != nil {
 		httpError(w, err, http.StatusInternalServerError)
 		return
 	}
