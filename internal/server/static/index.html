@@ -432,13 +432,32 @@ async function loadWatches() {
   buildChartTabs();
 }
 
+let editingId = null;
+
 function renderWatches() {
   const wl = $('wList');
   if (!allWatches.length) {
     wl.innerHTML = '<div style="padding:14px;color:var(--muted);text-align:center;font-size:13px">No watches yet — add one below.</div>';
     return;
   }
-  wl.innerHTML = allWatches.map(w => `
+  wl.innerHTML = allWatches.map(w => {
+    if (editingId === w.id) {
+      return `
+      <div class="w-row" data-id="${w.id}" style="flex-direction:column;align-items:stretch;gap:10px">
+        <form class="w-form" style="border:none;padding:0" onsubmit="saveWatch(event, ${w.id})">
+          <input class="w-input w-input-query" id="editQuery_${w.id}" value="${esc(w.query)}" placeholder="Search query…" required />
+          <input class="w-input w-input-price" id="editPrice_${w.id}" type="number" step="0.01" min="0.01" value="${w.max_price}" placeholder="Max price" required />
+          <div class="w-cat-wrap">
+            <input class="w-input w-input-price" id="editCat_${w.id}" value="${esc(w.category_id || '')}" placeholder="Category ID" />
+            <div class="w-cat-list" id="editCatList_${w.id}" style="display:none"></div>
+          </div>
+          <button class="w-btn" type="button" onclick="suggestCategoriesFor(${w.id})">Suggest</button>
+          <button class="w-submit" type="submit">Save</button>
+          <button class="w-btn" type="button" onclick="cancelEdit()">Cancel</button>
+        </form>
+      </div>`;
+    }
+    return `
     <div class="w-row${w.enabled ? '' : ' disabled'}" data-id="${w.id}">
       <div class="w-info">
         <button class="w-toggle${w.enabled ? ' on' : ''}" onclick="toggleWatch(${w.id}, ${!w.enabled})" title="${w.enabled ? 'Disable' : 'Enable'}"></button>
@@ -450,7 +469,8 @@ function renderWatches() {
         <button class="w-btn" onclick="editWatch(${w.id})">Edit</button>
         <button class="w-btn danger" onclick="deleteWatch(${w.id})">Delete</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function buildChartTabs() {
@@ -487,23 +507,51 @@ async function deleteWatch(id) {
   await loadStats();
 }
 
-async function editWatch(id) {
-  const w = allWatches.find(w => w.id === id);
-  if (!w) return;
-  const query = prompt('Search query:', w.query);
-  if (query === null) return;
-  const priceStr = prompt('Max price:', w.max_price);
-  if (priceStr === null) return;
-  const max_price = parseFloat(priceStr);
-  if (!query || isNaN(max_price) || max_price <= 0) { alert('Invalid input'); return; }
-  const category_id = prompt('Category ID (blank for none):', w.category_id || '');
-  if (category_id === null) return;
+function editWatch(id) {
+  editingId = id;
+  renderWatches();
+}
+
+function cancelEdit() {
+  editingId = null;
+  renderWatches();
+}
+
+async function saveWatch(e, id) {
+  e.preventDefault();
+  const query = document.getElementById('editQuery_' + id).value.trim();
+  const max_price = parseFloat(document.getElementById('editPrice_' + id).value);
+  const category_id = document.getElementById('editCat_' + id).value.trim();
+  if (!query || isNaN(max_price) || max_price <= 0) return;
 
   await fetch('/api/watches/' + id, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ query, max_price, category_id })
   });
+  editingId = null;
   await loadWatches();
+}
+
+async function suggestCategoriesFor(id) {
+  const query = document.getElementById('editQuery_' + id).value.trim();
+  if (!query) return;
+  const list = document.getElementById('editCatList_' + id);
+  list.innerHTML = '<div class="w-cat-item"><span class="cat-meta">Loading…</span></div>';
+  list.style.display = 'block';
+  try {
+    const cats = await api('/api/categories?query=' + encodeURIComponent(query));
+    if (!cats.length) {
+      list.innerHTML = '<div class="w-cat-item"><span class="cat-meta">No categories found</span></div>';
+      return;
+    }
+    list.innerHTML = cats.map(c => `
+      <div class="w-cat-item" onclick="document.getElementById('editCat_${id}').value='${esc(c.id)}'; this.parentElement.style.display='none'">
+        <span class="cat-name">${esc(c.name)}</span>
+        <span class="cat-meta">${c.id} (${c.match_count})</span>
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = '<div class="w-cat-item"><span class="cat-meta">Error loading categories</span></div>';
+  }
 }
 
 async function loadChart(query) {
@@ -572,7 +620,7 @@ function pickCategory(id) {
 
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.w-cat-wrap') && !e.target.closest('.w-btn')) {
-    $('catSuggestions').style.display = 'none';
+    document.querySelectorAll('.w-cat-list').forEach(el => el.style.display = 'none');
   }
 });
 
