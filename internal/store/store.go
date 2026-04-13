@@ -270,7 +270,7 @@ func (s *Store) GetWatch(id int) (*Watch, error) {
 	var w Watch
 	err := s.db.QueryRow(
 		`SELECT id, query, max_price, category_id, enabled, created_at FROM watches WHERE id = $1`, id,
-	).Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &w.CreatedAt)
+	).Scan(&w.ID, &w.Query, &w.MaxPrice, &w.CategoryID, &w.Enabled, &w.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
