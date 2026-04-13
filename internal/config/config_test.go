@@ -11,6 +11,7 @@ func setEnv(t *testing.T) {
 	t.Setenv("EBAY_CLIENT_ID", "test-id")
 	t.Setenv("EBAY_CLIENT_SECRET", "test-secret")
 	t.Setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/test")
+	t.Setenv("DATABASE_URL", "postgres://ebay:ebay@localhost:5432/ebay_watcher_test?sslmode=disable")
 }
 
 func TestLoad_Success(t *testing.T) {
@@ -27,8 +28,8 @@ func TestLoad_Success(t *testing.T) {
 	if cfg.PollInterval != time.Hour {
 		t.Errorf("PollInterval = %v, want 1h", cfg.PollInterval)
 	}
-	if cfg.DatabasePath != "/data/seen.db" {
-		t.Errorf("DatabasePath = %q, want /data/seen.db", cfg.DatabasePath)
+	if cfg.DatabaseURL != "postgres://ebay:ebay@localhost:5432/ebay_watcher_test?sslmode=disable" {
+		t.Errorf("DatabaseURL = %q, want postgres://ebay:ebay@localhost:5432/ebay_watcher_test?sslmode=disable", cfg.DatabaseURL)
 	}
 	if cfg.ListenAddr != ":8080" {
 		t.Errorf("ListenAddr = %q, want :8080", cfg.ListenAddr)
@@ -43,6 +44,7 @@ func TestLoad_MissingRequiredEnv(t *testing.T) {
 		{"missing EBAY_CLIENT_ID", "EBAY_CLIENT_ID"},
 		{"missing EBAY_CLIENT_SECRET", "EBAY_CLIENT_SECRET"},
 		{"missing DISCORD_WEBHOOK_URL", "DISCORD_WEBHOOK_URL"},
+		{"missing DATABASE_URL", "DATABASE_URL"},
 	}
 
 	for _, tt := range tests {
@@ -83,15 +85,15 @@ func TestLoad_CustomPollInterval(t *testing.T) {
 
 func TestLoad_CustomDefaults(t *testing.T) {
 	setEnv(t)
-	t.Setenv("DATABASE_PATH", "/tmp/test.db")
+	t.Setenv("DATABASE_URL", "postgres://custom:custom@db:5432/mydb?sslmode=disable")
 	t.Setenv("LISTEN_ADDR", ":9090")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.DatabasePath != "/tmp/test.db" {
-		t.Errorf("DatabasePath = %q, want /tmp/test.db", cfg.DatabasePath)
+	if cfg.DatabaseURL != "postgres://custom:custom@db:5432/mydb?sslmode=disable" {
+		t.Errorf("DatabaseURL = %q, want custom URL", cfg.DatabaseURL)
 	}
 	if cfg.ListenAddr != ":9090" {
 		t.Errorf("ListenAddr = %q, want :9090", cfg.ListenAddr)

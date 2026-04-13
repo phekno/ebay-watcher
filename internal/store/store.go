@@ -1,13 +1,12 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type Store struct {
@@ -15,17 +14,17 @@ type Store struct {
 }
 
 type Listing struct {
-	ID        string     `json:"id"`
-	Query     string     `json:"query"`
-	Title     string     `json:"title"`
-	Price     float64    `json:"price"`
-	Currency  string     `json:"currency"`
-	URL       string     `json:"url"`
-	Condition string     `json:"condition"`
-	Seller    string     `json:"seller"`
-	Notified  bool       `json:"notified"`
-	FirstSeen time.Time  `json:"first_seen"`
-	LastSeen  time.Time  `json:"last_seen"`
+	ID        string    `json:"id"`
+	Query     string    `json:"query"`
+	Title     string    `json:"title"`
+	Price     float64   `json:"price"`
+	Currency  string    `json:"currency"`
+	URL       string    `json:"url"`
+	Condition string    `json:"condition"`
+	Seller    string    `json:"seller"`
+	Notified  bool      `json:"notified"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
 }
 
 type PricePoint struct {
@@ -50,17 +49,17 @@ type Stats struct {
 	LastPollAt    *time.Time `json:"last_poll_at"`
 }
 
-func New(path string) (*Store, error) {
-	dir := filepath.Dir(path)
-	if dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("create data dir: %w", err)
-		}
-	}
-
-	db, err := sql.Open("sqlite", path)
+func New(connStr string) (*Store, error) {
+	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
+	}
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
 	if err := migrate(db); err != nil {
@@ -71,33 +70,47 @@ func New(path string) (*Store, error) {
 }
 
 func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
+	// Use a single connection with an advisory lock so concurrent
+	// processes (e.g. parallel test packages) don't deadlock on DDL.
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(42)`); err != nil {
+		return err
+	}
+	defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock(42)`) //nolint:errcheck
+
+	_, err = conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS listings (
 			id          TEXT PRIMARY KEY,
 			query       TEXT NOT NULL,
 			title       TEXT NOT NULL,
-			price       REAL NOT NULL,
+			price       DOUBLE PRECISION NOT NULL,
 			currency    TEXT NOT NULL DEFAULT 'USD',
 			url         TEXT NOT NULL,
 			condition   TEXT NOT NULL DEFAULT '',
 			seller      TEXT NOT NULL DEFAULT '',
-			notified    INTEGER NOT NULL DEFAULT 0,
-			first_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_seen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			notified    BOOLEAN NOT NULL DEFAULT FALSE,
+			first_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			last_seen   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 
 		CREATE TABLE IF NOT EXISTS price_history (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			id         SERIAL PRIMARY KEY,
 			listing_id TEXT NOT NULL,
 			query      TEXT NOT NULL,
-			price      REAL NOT NULL,
-			seen_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			price      DOUBLE PRECISION NOT NULL,
+			seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			FOREIGN KEY (listing_id) REFERENCES listings(id)
 		);
 
 		CREATE TABLE IF NOT EXISTS poll_log (
-			id        INTEGER PRIMARY KEY AUTOINCREMENT,
-			polled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			id        SERIAL PRIMARY KEY,
+			polled_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_price_history_query ON price_history(query, seen_at);
@@ -105,11 +118,11 @@ func migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_listings_notified ON listings(notified);
 
 		CREATE TABLE IF NOT EXISTS watches (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			id         SERIAL PRIMARY KEY,
 			query      TEXT NOT NULL,
-			max_price  REAL NOT NULL,
-			enabled    INTEGER NOT NULL DEFAULT 1,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			max_price  DOUBLE PRECISION NOT NULL,
+			enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 	`)
 	return err
@@ -119,9 +132,22 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// Truncate removes all data from all tables. Used by tests.
+func (s *Store) Truncate() error {
+	// Use DELETE instead of TRUNCATE to avoid ACCESS EXCLUSIVE locks
+	// that can deadlock with concurrent test packages.
+	_, err := s.db.Exec(`
+		DELETE FROM price_history;
+		DELETE FROM listings;
+		DELETE FROM poll_log;
+		DELETE FROM watches;
+	`)
+	return err
+}
+
 func (s *Store) HasSeen(id string) (bool, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(1) FROM listings WHERE id = ?`, id).Scan(&count)
+	err := s.db.QueryRow(`SELECT COUNT(1) FROM listings WHERE id = $1`, id).Scan(&count)
 	return count > 0, err
 }
 
@@ -129,29 +155,29 @@ func (s *Store) HasSeen(id string) (bool, error) {
 func (s *Store) UpsertListing(l Listing) error {
 	_, err := s.db.Exec(`
 		INSERT INTO listings (id, query, title, price, currency, url, condition, seller, notified)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(id) DO UPDATE SET
 			price     = excluded.price,
-			last_seen = CURRENT_TIMESTAMP
+			last_seen = NOW()
 	`, l.ID, l.Query, l.Title, l.Price, l.Currency, l.URL, l.Condition, l.Seller, l.Notified)
 	if err != nil {
 		return fmt.Errorf("upsert listing: %w", err)
 	}
 
 	_, err = s.db.Exec(
-		`INSERT INTO price_history (listing_id, query, price) VALUES (?, ?, ?)`,
+		`INSERT INTO price_history (listing_id, query, price) VALUES ($1, $2, $3)`,
 		l.ID, l.Query, l.Price,
 	)
 	return err
 }
 
 func (s *Store) MarkNotified(id string) error {
-	_, err := s.db.Exec(`UPDATE listings SET notified = 1 WHERE id = ?`, id)
+	_, err := s.db.Exec(`UPDATE listings SET notified = TRUE WHERE id = $1`, id)
 	return err
 }
 
 func (s *Store) RecordPoll() error {
-	_, err := s.db.Exec(`INSERT INTO poll_log (polled_at) VALUES (CURRENT_TIMESTAMP)`)
+	_, err := s.db.Exec(`INSERT INTO poll_log (polled_at) VALUES (NOW())`)
 	return err
 }
 
@@ -159,9 +185,9 @@ func (s *Store) GetNotifiedListings(limit int) ([]Listing, error) {
 	rows, err := s.db.Query(`
 		SELECT id, query, title, price, currency, url, condition, seller, notified, first_seen, last_seen
 		FROM listings
-		WHERE notified = 1
+		WHERE notified = TRUE
 		ORDER BY last_seen DESC
-		LIMIT ?
+		LIMIT $1
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -174,10 +200,10 @@ func (s *Store) GetPriceHistory(query string, days int) ([]PricePoint, error) {
 	rows, err := s.db.Query(`
 		SELECT seen_at, price, query
 		FROM price_history
-		WHERE query = ?
-		  AND seen_at >= datetime('now', ?)
+		WHERE query = $1
+		  AND seen_at >= NOW() - make_interval(days => $2)
 		ORDER BY seen_at ASC
-	`, query, fmt.Sprintf("-%d days", days))
+	`, query, days)
 	if err != nil {
 		return nil, err
 	}
@@ -186,11 +212,9 @@ func (s *Store) GetPriceHistory(query string, days int) ([]PricePoint, error) {
 	var points []PricePoint
 	for rows.Next() {
 		var p PricePoint
-		var seenAt string
-		if err := rows.Scan(&seenAt, &p.Price, &p.Query); err != nil {
+		if err := rows.Scan(&p.SeenAt, &p.Price, &p.Query); err != nil {
 			return nil, err
 		}
-		p.SeenAt, _ = time.Parse("2006-01-02 15:04:05", seenAt)
 		points = append(points, p)
 	}
 	return points, rows.Err()
@@ -202,7 +226,7 @@ func (s *Store) GetStats() (*Stats, error) {
 	err := s.db.QueryRow(`
 		SELECT
 			COUNT(*),
-			COUNT(CASE WHEN notified=1 THEN 1 END),
+			COUNT(CASE WHEN notified = TRUE THEN 1 END),
 			COALESCE(MIN(price), 0),
 			COALESCE(AVG(price), 0)
 		FROM listings
@@ -211,13 +235,12 @@ func (s *Store) GetStats() (*Stats, error) {
 		return nil, err
 	}
 
-	var lastPoll string
+	var lastPoll time.Time
 	err = s.db.QueryRow(
 		`SELECT polled_at FROM poll_log ORDER BY polled_at DESC LIMIT 1`,
 	).Scan(&lastPoll)
 	if err == nil {
-		t, _ := time.Parse("2006-01-02 15:04:05", lastPoll)
-		stats.LastPollAt = &t
+		stats.LastPollAt = &lastPoll
 	}
 
 	return stats, nil
@@ -235,7 +258,7 @@ func (s *Store) ListWatches() ([]Watch, error) {
 }
 
 func (s *Store) ListEnabledWatches() ([]Watch, error) {
-	rows, err := s.db.Query(`SELECT id, query, max_price, enabled, created_at FROM watches WHERE enabled = 1 ORDER BY created_at ASC`)
+	rows, err := s.db.Query(`SELECT id, query, max_price, enabled, created_at FROM watches WHERE enabled = TRUE ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -245,32 +268,30 @@ func (s *Store) ListEnabledWatches() ([]Watch, error) {
 
 func (s *Store) GetWatch(id int) (*Watch, error) {
 	var w Watch
-	var createdAt string
 	err := s.db.QueryRow(
-		`SELECT id, query, max_price, enabled, created_at FROM watches WHERE id = ?`, id,
-	).Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &createdAt)
+		`SELECT id, query, max_price, enabled, created_at FROM watches WHERE id = $1`, id,
+	).Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &w.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
-	w.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 	return &w, nil
 }
 
 func (s *Store) CreateWatch(query string, maxPrice float64) (*Watch, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO watches (query, max_price) VALUES (?, ?)`,
+	var id int
+	err := s.db.QueryRow(
+		`INSERT INTO watches (query, max_price) VALUES ($1, $2) RETURNING id`,
 		query, maxPrice,
-	)
+	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("create watch: %w", err)
 	}
-	id, _ := res.LastInsertId()
-	return s.GetWatch(int(id))
+	return s.GetWatch(id)
 }
 
 func (s *Store) UpdateWatch(id int, query string, maxPrice float64, enabled bool) error {
 	res, err := s.db.Exec(
-		`UPDATE watches SET query = ?, max_price = ?, enabled = ? WHERE id = ?`,
+		`UPDATE watches SET query = $1, max_price = $2, enabled = $3 WHERE id = $4`,
 		query, maxPrice, enabled, id,
 	)
 	if err != nil {
@@ -284,7 +305,7 @@ func (s *Store) UpdateWatch(id int, query string, maxPrice float64, enabled bool
 }
 
 func (s *Store) DeleteWatch(id int) error {
-	res, err := s.db.Exec(`DELETE FROM watches WHERE id = ?`, id)
+	res, err := s.db.Exec(`DELETE FROM watches WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete watch: %w", err)
 	}
@@ -299,11 +320,9 @@ func scanWatches(rows *sql.Rows) ([]Watch, error) {
 	var watches []Watch
 	for rows.Next() {
 		var w Watch
-		var createdAt string
-		if err := rows.Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &createdAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Query, &w.MaxPrice, &w.Enabled, &w.CreatedAt); err != nil {
 			return nil, err
 		}
-		w.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 		watches = append(watches, w)
 	}
 	return watches, rows.Err()
@@ -313,17 +332,14 @@ func scanListings(rows *sql.Rows) ([]Listing, error) {
 	var listings []Listing
 	for rows.Next() {
 		var l Listing
-		var firstSeen, lastSeen string
 		err := rows.Scan(
 			&l.ID, &l.Query, &l.Title, &l.Price, &l.Currency,
 			&l.URL, &l.Condition, &l.Seller, &l.Notified,
-			&firstSeen, &lastSeen,
+			&l.FirstSeen, &l.LastSeen,
 		)
 		if err != nil {
 			return nil, err
 		}
-		l.FirstSeen, _ = time.Parse("2006-01-02 15:04:05", firstSeen)
-		l.LastSeen, _ = time.Parse("2006-01-02 15:04:05", lastSeen)
 		listings = append(listings, l)
 	}
 	return listings, rows.Err()

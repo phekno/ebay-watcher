@@ -165,8 +165,11 @@ func (s *Server) handleCreateWatch(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err, http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	jsonOK(w, watch)
+	if err := json.NewEncoder(w).Encode(watch); err != nil {
+		slog.Error("json encode error", "error", err)
+	}
 }
 
 func (s *Server) handleUpdateWatch(w http.ResponseWriter, r *http.Request) {

@@ -1,16 +1,23 @@
 package store
 
 import (
-	"path/filepath"
+	"os"
 	"testing"
 )
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	s, err := New(dbPath)
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://localhost:5432/ebay_watcher_test?sslmode=disable"
+	}
+	s, err := New(dsn)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
+	}
+	// Clean slate for this test
+	if err := s.Truncate(); err != nil {
+		t.Fatalf("truncate tables: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s

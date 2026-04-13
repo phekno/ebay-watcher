@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,10 +16,16 @@ import (
 
 func newTestServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	s, err := store.New(dbPath)
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://localhost:5432/ebay_watcher_test?sslmode=disable"
+	}
+	s, err := store.New(dsn)
 	if err != nil {
 		t.Fatalf("create store: %v", err)
+	}
+	if err := s.Truncate(); err != nil {
+		t.Fatalf("truncate tables: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 

@@ -15,6 +15,25 @@ jobs:
   test:
     name: Test & Lint
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ebay_watcher_test
+          POSTGRES_USER: ebay
+          POSTGRES_PASSWORD: ebay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ebay -d ebay_watcher_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgres://ebay:ebay@localhost:5432/ebay_watcher_test?sslmode=disable
+
     steps:
       - uses: actions/checkout@v5
 
@@ -44,6 +63,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       version: ${{ steps.meta.outputs.version }}
@@ -98,19 +118,58 @@ jobs:
             echo "- \`$tag\`" >> $GITHUB_STEP_SUMMARY
           done
 
-  # On tagged releases, output the exact image ref for use in home-ops
-  release-summary:
-    name: Release Summary
+  release:
+    name: Create Release
     runs-on: ubuntu-latest
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
-      - name: Print HelmRelease image ref
+      - uses: actions/checkout@v5
+
+      - name: Generate release notes
+        id: notes
         run: |
-          echo "### Deploy this version" >> $GITHUB_STEP_SUMMARY
-          echo "Update your HelmRelease with:" >> $GITHUB_STEP_SUMMARY
-          echo '```yaml' >> $GITHUB_STEP_SUMMARY
-          echo "image:" >> $GITHUB_STEP_SUMMARY
-          echo "  repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "  tag: ${{ needs.build.outputs.version }}@${{ needs.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          VERSION="${{ needs.build.outputs.version }}"
+          DIGEST="${{ needs.build.outputs.digest }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          cat > release-notes.md <<EOF
+          ## Container Image
+
+          \`\`\`
+          ${IMAGE}:${VERSION}
+          \`\`\`
+
+          **Digest:** \`${DIGEST}\`
+
+          ### Pin by digest (recommended for k8s)
+
+          \`\`\`
+          ${IMAGE}:${VERSION}@${DIGEST}
+          \`\`\`
+
+          ### HelmRelease values
+
+          \`\`\`yaml
+          image:
+            repository: ${IMAGE}
+            tag: ${VERSION}@${DIGEST}
+          \`\`\`
+          EOF
+
+          # Strip leading whitespace from heredoc
+          sed -i 's/^          //' release-notes.md
+
+          # Generate checksums file
+          echo "${DIGEST}  ${IMAGE}:${VERSION}" > checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            checksums.txt \
+            --title "${{ github.ref_name }}" \
+            --notes-file release-notes.md

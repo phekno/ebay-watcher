@@ -27,7 +27,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := store.New(cfg.DatabasePath)
+	db, err := store.New(cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("failed to open store", "error", err)
 		os.Exit(1)

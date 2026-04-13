@@ -69,6 +69,7 @@ func (w *Watcher) Run(ctx context.Context) {
 			}
 			if err := w.store.UpsertListing(sl); err != nil {
 				slog.Error("store upsert error", "id", listing.ID, "error", err)
+				continue
 			}
 
 			if seen {
